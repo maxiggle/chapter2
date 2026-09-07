@@ -10,6 +10,6 @@ arbitrum_sepolia = "${ARBITRUM_SEPOLIA_RPC_URL}"
 sepolia = "${SEPOLIA_RPC_URL}"
 
 [etherscan]
-base_sepolia = { key = "${BLOCKSCOUT_API_KEY}", url = "${BLOCKSCOUT_BASE_SEPOLIA_URL}", verifier = "blockscout" }
-op_sepolia = { key = "${BLOCKSCOUT_API_KEY}", url = "${BLOCKSCOUT_OP_SEPOLIA_URL}", verifier = "blockscout" }
-sepolia = { key = "${BLOCKSCOUT_API_KEY}", url = "${BLOCKSCOUT_SEPOLIA_URL}", verifier = "blockscout" }
+base_sepolia = { url = "${BLOCKSCOUT_BASE_SEPOLIA_URL}", verifier = "blockscout" }
+op_sepolia = { url = "${BLOCKSCOUT_OP_SEPOLIA_URL}", verifier = "blockscout" }
+sepolia = { url = "${BLOCKSCOUT_SEPOLIA_URL}", verifier = "blockscout" }
