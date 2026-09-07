@@ -21,23 +21,15 @@ contract Chapter2Lock is Ownable, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     IERC20 public immutable token;
-    address public constant BURN_ADDRESS =
-        0x000000000000000000000000000000000000dEaD;
+    address public constant BURN_ADDRESS = 0x000000000000000000000000000000000000dEaD;
 
     bool public migrationCompleted;
     uint256 public migrationBlock;
     uint256 public totalAssetsLocked;
 
-    event MigrationLocked(
-        address indexed user,
-        uint256 amount,
-        uint256 blockNumber
-    );
+    event MigrationLocked(address indexed user, uint256 amount, uint256 blockNumber);
     event Unlocked(address indexed user, uint256 amount);
-    event MigrationCompleted(
-        uint256 indexed migrationBlock,
-        uint256 totalLocked
-    );
+    event MigrationCompleted(uint256 indexed migrationBlock, uint256 totalLocked);
 
     /// @notice Locks a specified amount of tokens from the caller for migration.
     /// @dev Reverts if migration is already completed or if amount is 0.
@@ -75,53 +67,53 @@ contract Chapter2Lock is Ownable, ReentrancyGuard {
     /// @notice Retrieves the complete array of migration participants.
     /// @dev For large sets of participants, consider using `getMigrationParticipantsPaginated` to avoid out-of-gas errors.
     /// @return An array containing addresses of all unique migration participants.
-    function getMigrationParticipants()
-        external
-        view
-        returns (address[] memory)
-    {
+    function getMigrationParticipants() external view returns (address[] memory) {
         return _migrationParticipant;
     }
 
     /// @notice Gets the total amount of tokens locked by a specific participant.
     /// @param participant The address of the user to query.
     /// @return The total locked balance of the specified user.
-    function getParticipantBalance(
-        address participant
-    ) external view returns (uint256) {
+    function getParticipantBalance(address participant) external view returns (uint256) {
         return totalLockedBalances[participant];
     }
 
-    /// @notice Retrieves a paginated list of migration participants.
-    /// @dev Calculates pagination slice bounds and reverts if the requested page is out of bounds.
-    /// @param pageNumber The zero-indexed page number to query.
-    /// @param pageSize The maximum number of participant addresses to return per page.
-    /// @return participants An array of participant addresses for the requested page.
-    /// @return total The total count of all migration participants.
-    function getMigrationParticipantsPaginated(
-        uint256 pageNumber,
-        uint256 pageSize
-    ) external view returns (address[] memory, uint256) {
-        uint256 total = _migrationParticipant.length;
-        uint256 startIndex = pageNumber * pageSize;
-        uint256 endIndex = startIndex + pageSize;
+    /// @notice Retrieves a paginated slice of migration participants.
+    /// @dev Wraps internal pagination logic to query participants safely in bounded slices.
+    /// @param offset The zero-indexed starting position.
+    /// @param limit The maximum number of participants to retrieve.
+    /// @return participants An array containing the participant addresses for the requested slice.
+    /// @return totalParticipantCount The total count of all unique migration participants.
+    function getMigrationParticipantsPaginated(uint256 offset, uint256 limit)
+        external
+        view
+        returns (address[] memory participants, uint256 totalParticipantCount)
+    {
+        return getPaginated(_migrationParticipant, offset, limit);
+    }
 
-        require(
-            pageNumber < (total + pageSize - 1) / pageSize,
-            "Page out of bounds"
-        );
-
-        if (endIndex > total) {
-            endIndex = total;
+    /// @notice Helper to retrieve a paginated slice from an address storage array.
+    function getPaginated(address[] storage arr, uint256 offset, uint256 limit)
+        internal
+        view
+        returns (address[] memory result, uint256 total)
+    {
+        total = arr.length;
+        if (offset >= total) {
+            return (new address[](0), total);
         }
-
-        uint256 count = endIndex - startIndex;
-        address[] memory participants = new address[](count);
-
-        for (uint256 i = 0; i < count; i++) {
-            participants[i] = _migrationParticipant[startIndex + i];
+        uint256 count = limit;
+        unchecked {
+            if (offset + count > total) {
+                count = total - offset;
+            }
         }
-
-        return (participants, total);
+        result = new address[](count);
+        for (uint256 i = 0; i < count;) {
+            result[i] = arr[offset + i];
+            unchecked {
+                ++i;
+            }
+        }
     }
 }
