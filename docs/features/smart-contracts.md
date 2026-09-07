@@ -16,9 +16,11 @@ Traditional community migrations suffer from snapshot vulnerability (users conti
 The smart contracts are written in Solidity `^0.8.24` and leverage OpenZeppelin Contracts `v5.7.0`:
 
 - [`Chapter2Lock.sol`](file:///Users/godwinekainu/development/chapter2/contracts/src/Chapter2Lock.sol): Deployed on the source chain (e.g., Ethereum / Sepolia). Tracks participant locked balances, exposes gas-bounded paginated participant queries, and executes owner-authorized burn to the dead address upon migration finalization.
+- [`Chapter2TaxAwareLock.sol`](file:///Users/godwinekainu/development/chapter2/contracts/src/Chapter2TaxAwareLock.sol): Specialized source lock contract for fee-on-transfer (taxed) tokens. Uses balance-delta accounting (`balanceAfter - balanceBefore`) to credit exact net receipts, sweeps actual token balance to prevent out-of-balance reverts, and supports chunked burning (`burnLockedChunked`) for tokens with `maxTxAmount` transfer caps.
 - [`chapter2Factory.sol`](file:///Users/godwinekainu/development/chapter2/contracts/src/chapter2Factory.sol): Deployed on the target chain (e.g., Base / Base Sepolia). Uses `Create2` to deterministically calculate escrow addresses and deploy claim instances while tracking them in an immutable migration registry.
 - [`Chapter2Claim.sol`](file:///Users/godwinekainu/development/chapter2/contracts/src/Chapter2Claim.sol): Target claim escrow contract. Integrates OpenZeppelin `MerkleProof` for leaf verification, `EIP712` for replay-safe gasless claims with per-participant nonces, and `ReentrancyGuard` with `SafeERC20` transfers.
 - [`TestToken.sol`](file:///Users/godwinekainu/development/chapter2/contracts/src/TestToken.sol): Standard mock ERC-20 with owner minting and public burning for testing and demo environments.
+- [`TestTaxToken.sol`](file:///Users/godwinekainu/development/chapter2/contracts/src/TestTaxToken.sol): Mock fee-on-transfer ERC-20 with configurable tax basis points and fee recipient for testing tax-aware edge cases.
 
 ---
 
@@ -81,5 +83,9 @@ sequenceDiagram
    - Even if a relayer front-runs or reorders a claim transaction, tokens are strictly transferred to `participant` (never `msg.sender`), ensuring zero risk of relayer fund interception.
 3. **Double Claim Protection**:
    - Both direct and gasless paths set `hasClaimed[participant] = true` prior to token transfer (`nonReentrant` + checks-effects-interactions pattern).
-4. **Scope Boundaries**:
+4. **Fee-on-Transfer (Taxed) Token Accounting**:
+   - `Chapter2TaxAwareLock` computes `actualReceived = TOKEN.balanceOf(address(this)) - balanceBefore` during each deposit, ensuring the internal ledger accurately matches physical token inflows. The final burn sweeps `TOKEN.balanceOf(address(this))` directly to `0x...dEaD`, completely preventing out-of-balance reverts when burning taxed assets.
+5. **Transfer Cap (`maxTxAmount`) Support**:
+   - `Chapter2TaxAwareLock` provides `burnLockedChunked(uint256 chunkAmount)`, allowing owners to burn locked reserves in bounded chunks across multiple transactions for tokens that enforce max-transaction limits.
+6. **Scope Boundaries**:
    - Scope is intentionally focused on ERC-20 balance replication. LP positions, custom rebasing state, and NFT positions are deferred to specialized target adapters.
