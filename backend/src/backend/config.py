@@ -32,8 +32,10 @@ class Settings:
     TARGET_TOKEN_ADDRESS: str = os.getenv("TARGET_TOKEN_ADDRESS", "0xDb92614412003E94d18B71E5FBC332ae47158A50")
     CLAIM_CONTRACT_ADDRESS: str = os.getenv("CLAIM_CONTRACT_ADDRESS", "0x3e9035b88684544EFEFCF47A4E392ECb2b142083")
 
-    # Database
-    DATABASE_URL: str = os.getenv("DATABASE_URL", f"sqlite:///{backend_dir}/chapter2.db")
+    # Database (PostgreSQL container)
+    DATABASE_URL: str = os.getenv(
+        "DATABASE_URL", "postgresql://chapter2:chapter2_password@localhost:5432/chapter2"
+    )
 
 
 settings = Settings()
