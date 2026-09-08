@@ -8,10 +8,13 @@ from web3 import Web3
 from backend.database import get_db
 from backend.models.db_models import MigrationRecord, ParticipantSnapshot
 from backend.models.domain import (
+    GaslessClaimRequest,
+    GaslessClaimResponse,
     MerkleClaimResponse,
     MigrationSnapshotResponse,
 )
 from backend.services.snapshot_service import SnapshotService
+from backend.services.relayer_service import RelayerService
 
 api_router = APIRouter()
 
@@ -124,3 +127,66 @@ def get_participant_claim(
         claim_contract_address=migration.target_claim_address,
         is_claimed=participant_record.is_claimed,
     )
+
+
+@api_router.post(
+    "/api/v1/claims/gasless",
+    response_model=GaslessClaimResponse,
+    status_code=status.HTTP_200_OK,
+    tags=["Claims"],
+)
+def submit_gasless_claim(
+    request: GaslessClaimRequest,
+    claim_contract_address: Optional[str] = None,
+    db: Session = Depends(get_db),
+):
+    """Submits an EIP-712 signed claim payload on behalf of a participant via the relayer."""
+    try:
+        checksummed_participant = to_checksum_address(request.participant)
+    except Exception:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid participant Ethereum address")
+
+    # Fetch verified proof from snapshot
+    participant_record = (
+        db.query(ParticipantSnapshot)
+        .filter_by(participant_address=checksummed_participant)
+        .order_by(ParticipantSnapshot.id.desc())
+        .first()
+    )
+    if not participant_record:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Participant {checksummed_participant} not found in verified migration snapshot",
+        )
+
+    resolved_contract_address = (
+        claim_contract_address
+        or participant_record.migration.target_claim_address
+    )
+
+    relayer_service = RelayerService()
+    try:
+        tx_hash = relayer_service.submit_gasless_claim(
+            participant=checksummed_participant,
+            amount=request.amount,
+            deadline=request.deadline,
+            signature=request.signature,
+            merkle_proof=participant_record.merkle_proof,
+            claim_contract_address=resolved_contract_address,
+            db=db,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Relayer execution failed: {str(e)}",
+        )
+
+    return GaslessClaimResponse(
+        transaction_hash=tx_hash,
+        status="submitted",
+        participant=checksummed_participant,
+        amount=str(request.amount),
+    )
+

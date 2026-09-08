@@ -4,57 +4,10 @@ from sqlalchemy.orm import Session
 from web3 import Web3
 
 from backend.config import settings
+from backend.contracts import Chapter2LockContract
 from backend.models.db_models import MigrationRecord, ParticipantSnapshot
 from backend.models.domain import ParticipantRecord
 from backend.services.merkle_tree import MerkleTree
-
-CHAPTER2_LOCK_ABI = [
-    {
-        "inputs": [],
-        "name": "migrationCompleted",
-        "outputs": [{"name": "", "type": "bool"}],
-        "stateMutability": "view",
-        "type": "function",
-    },
-    {
-        "inputs": [],
-        "name": "migrationBlock",
-        "outputs": [{"name": "", "type": "uint256"}],
-        "stateMutability": "view",
-        "type": "function",
-    },
-    {
-        "inputs": [],
-        "name": "totalAssetsLocked",
-        "outputs": [{"name": "", "type": "uint256"}],
-        "stateMutability": "view",
-        "type": "function",
-    },
-    {
-        "inputs": [],
-        "name": "getMigrationParticipants",
-        "outputs": [{"name": "", "type": "address[]"}],
-        "stateMutability": "view",
-        "type": "function",
-    },
-    {
-        "inputs": [
-            {"name": "offset", "type": "uint256"},
-            {"name": "limit", "type": "uint256"},
-        ],
-        "name": "getMigrationParticipantsPaginated",
-        "outputs": [{"name": "", "type": "address[]"}],
-        "stateMutability": "view",
-        "type": "function",
-    },
-    {
-        "inputs": [{"name": "participant", "type": "address"}],
-        "name": "totalLockedBalances",
-        "outputs": [{"name": "", "type": "uint256"}],
-        "stateMutability": "view",
-        "type": "function",
-    },
-]
 
 
 class SnapshotService:
@@ -65,22 +18,20 @@ class SnapshotService:
 
     def fetch_participants_from_chain(self, lock_address: str) -> list[ParticipantRecord]:
         """Fetches all participants and locked balances from the source lock contract."""
-        checksummed_lock = to_checksum_address(lock_address)
-        contract = self.web3.eth.contract(address=checksummed_lock, abi=CHAPTER2_LOCK_ABI)
+        contract = Chapter2LockContract(self.web3, lock_address)
 
-        is_completed = contract.functions.migrationCompleted().call()
-        if not is_completed:
+        if not contract.migration_completed():
             raise ValueError("Migration has not been finalized on source chain yet")
 
-        # Fetch participants using paginated calls (batch size 100) or full list
+        # Fetch participants using paginated calls or full list
         try:
-            raw_participants = contract.functions.getMigrationParticipants().call()
+            raw_participants = contract.get_migration_participants()
         except Exception:
             offset = 0
             limit = 100
             raw_participants = []
             while True:
-                batch = contract.functions.getMigrationParticipantsPaginated(offset, limit).call()
+                batch = contract.get_migration_participants_paginated(offset, limit)
                 if not batch:
                     break
                 raw_participants.extend(batch)
@@ -91,7 +42,7 @@ class SnapshotService:
         records: list[ParticipantRecord] = []
         for raw_addr in raw_participants:
             addr = to_checksum_address(raw_addr)
-            locked_balance = contract.functions.totalLockedBalances(addr).call()
+            locked_balance = contract.total_locked_balances(addr)
             records.append(ParticipantRecord(participant=addr, locked_amount=str(locked_balance)))
 
         return records
@@ -106,9 +57,9 @@ class SnapshotService:
         resolved_lock_addr = to_checksum_address(lock_address or settings.SOURCE_LOCK_ADDRESS)
         resolved_claim_addr = to_checksum_address(target_claim_address or settings.CLAIM_CONTRACT_ADDRESS)
 
-        contract = self.web3.eth.contract(address=resolved_lock_addr, abi=CHAPTER2_LOCK_ABI)
-        migration_block = contract.functions.migrationBlock().call()
-        total_assets = contract.functions.totalAssetsLocked().call()
+        contract = Chapter2LockContract(self.web3, resolved_lock_addr)
+        migration_block = contract.migration_block()
+        total_assets = contract.total_assets_locked()
 
         participants = self.fetch_participants_from_chain(resolved_lock_addr)
         if not participants:
